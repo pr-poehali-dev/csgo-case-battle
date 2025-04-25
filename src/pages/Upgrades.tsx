@@ -1,12 +1,13 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import { Card, CardContent } from "@/components/ui/card";
-import { ArrowRight, RefreshCw, ChevronDown } from "lucide-react";
+import { ArrowRight, RefreshCw, ChevronDown, CheckCircle2, XCircle } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Progress } from "@/components/ui/progress";
 
 interface Skin {
   id: string;
@@ -21,6 +22,14 @@ export default function Upgrades() {
   const [winChance, setWinChance] = useState(50);
   const [selectedSkin, setSelectedSkin] = useState<Skin | null>(null);
   const [targetSkin, setTargetSkin] = useState<Skin | null>(null);
+  const [isUpgrading, setIsUpgrading] = useState(false);
+  const [upgradeResult, setUpgradeResult] = useState<'pending' | 'win' | 'lose'>('pending');
+  const [showResult, setShowResult] = useState(false);
+  const [upgradeProgress, setUpgradeProgress] = useState(0);
+  const [winThreshold, setWinThreshold] = useState(50);
+  const [randomValue, setRandomValue] = useState(0);
+  const progressIntervalRef = useRef<number | null>(null);
+  const resultTimeoutRef = useRef<number | null>(null);
   
   // Демо скины для выбора
   const userSkins: Skin[] = [
@@ -55,6 +64,47 @@ export default function Upgrades() {
     }
   };
 
+  const startUpgrade = () => {
+    if (!selectedSkin || !targetSkin) return;
+    
+    // Очищаем предыдущие таймеры, если они есть
+    if (progressIntervalRef.current) clearInterval(progressIntervalRef.current);
+    if (resultTimeoutRef.current) clearTimeout(resultTimeoutRef.current);
+    
+    setIsUpgrading(true);
+    setShowResult(false);
+    setUpgradeProgress(0);
+    setWinThreshold(winChance);
+    
+    // Генерация случайного числа от 0 до 100 для определения результата
+    const random = Math.random() * 100;
+    setRandomValue(random);
+    
+    // Анимация прогресса
+    progressIntervalRef.current = window.setInterval(() => {
+      setUpgradeProgress(prev => {
+        if (prev >= 100) {
+          if (progressIntervalRef.current) clearInterval(progressIntervalRef.current);
+          return 100;
+        }
+        return prev + 1;
+      });
+    }, 20);
+    
+    // Показать результат через 2 секунды
+    resultTimeoutRef.current = window.setTimeout(() => {
+      setIsUpgrading(false);
+      setShowResult(true);
+      setUpgradeResult(random < winChance ? 'win' : 'lose');
+    }, 2000);
+  };
+
+  const resetUpgrade = () => {
+    setShowResult(false);
+    setUpgradeResult('pending');
+    setUpgradeProgress(0);
+  };
+
   const rarityColors = {
     common: "border-gray-400 bg-gray-400/10",
     uncommon: "border-blue-400 bg-blue-400/10",
@@ -70,6 +120,14 @@ export default function Upgrades() {
     mythical: "text-pink-400",
     legendary: "text-amber-400"
   };
+
+  // Очистка интервалов при размонтировании
+  useEffect(() => {
+    return () => {
+      if (progressIntervalRef.current) clearInterval(progressIntervalRef.current);
+      if (resultTimeoutRef.current) clearTimeout(resultTimeoutRef.current);
+    };
+  }, []);
 
   return (
     <div className="min-h-screen flex flex-col bg-gradient-to-b from-background to-background/80">
@@ -114,6 +172,7 @@ export default function Upgrades() {
                       onClick={() => {
                         setSelectedSkin(skin);
                         setTargetSkin(null);
+                        resetUpgrade();
                       }}
                     >
                       <img src={skin.image} alt={skin.name} className="w-12 h-12 object-cover rounded" />
@@ -192,10 +251,67 @@ export default function Upgrades() {
               </div>
             )}
             
-            {selectedSkin && targetSkin && (
-              <Button size="lg" className="mt-8 animate-pulse bg-gradient-to-r from-primary to-purple-500">
-                <RefreshCw className="mr-2 h-4 w-4" />
-                Начать апгрейд
+            {isUpgrading && (
+              <div className="mt-8 w-full">
+                <div className="flex justify-between text-xs text-muted-foreground mb-1">
+                  <span>0%</span>
+                  <span>Шанс: {winChance}%</span>
+                  <span>100%</span>
+                </div>
+                <div className="relative w-full">
+                  <Progress value={upgradeProgress} className="h-8" />
+                  <div 
+                    className="absolute top-0 h-8 w-px bg-red-500" 
+                    style={{ left: `${winThreshold}%` }}
+                  />
+                  {upgradeProgress > 0 && (
+                    <div 
+                      className="absolute top-0 h-8 w-1 bg-white" 
+                      style={{ left: `${randomValue}%` }}
+                    />
+                  )}
+                </div>
+              </div>
+            )}
+            
+            {showResult && (
+              <div className={`mt-6 p-4 rounded-xl ${upgradeResult === 'win' ? 'bg-green-500/20 border border-green-500' : 'bg-red-500/20 border border-red-500'}`}>
+                <div className="flex items-center gap-3">
+                  {upgradeResult === 'win' ? (
+                    <>
+                      <CheckCircle2 className="w-8 h-8 text-green-500" />
+                      <div>
+                        <h3 className="font-bold text-green-500">Успешный апгрейд!</h3>
+                        <p className="text-sm">Вы получили {targetSkin?.name}</p>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <XCircle className="w-8 h-8 text-red-500" />
+                      <div>
+                        <h3 className="font-bold text-red-500">Неудачный апгрейд</h3>
+                        <p className="text-sm">Вы потеряли {selectedSkin?.name}</p>
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+            )}
+            
+            {selectedSkin && targetSkin && !isUpgrading && (
+              <Button 
+                size="lg" 
+                className={`mt-8 ${!showResult ? 'animate-pulse bg-gradient-to-r from-primary to-purple-500' : 'bg-secondary'}`}
+                onClick={showResult ? resetUpgrade : startUpgrade}
+              >
+                {showResult ? (
+                  'Еще раз'
+                ) : (
+                  <>
+                    <RefreshCw className="mr-2 h-4 w-4" />
+                    Начать апгрейд
+                  </>
+                )}
               </Button>
             )}
           </div>
@@ -215,7 +331,10 @@ export default function Upgrades() {
                     <button
                       key={skin.id}
                       className={`w-full flex items-center gap-3 p-3 rounded-lg border ${rarityColors[skin.rarity]} hover:bg-accent/50 transition-colors`}
-                      onClick={() => selectTargetSkin(skin)}
+                      onClick={() => {
+                        selectTargetSkin(skin);
+                        resetUpgrade();
+                      }}
                     >
                       <img src={skin.image} alt={skin.name} className="w-12 h-12 object-cover rounded" />
                       <div className="text-left flex-1">
